@@ -5,7 +5,6 @@ on:
   push:
     branches:
       - main
-
   workflow_dispatch:
 
 jobs:
@@ -13,37 +12,75 @@ jobs:
     runs-on: windows-latest
 
     steps:
-      # 1. Download source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 2. Setup MSBuild
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      # 3. Setup NuGet
       - name: Setup NuGet
         uses: NuGet/setup-nuget@v2
 
-      # 4. Restore NuGet packages
       - name: Restore NuGet Packages
         shell: pwsh
         run: |
           nuget restore "./ClassLateManage.csproj" `
             -PackagesDirectory "${{ github.workspace }}\..\packages"
 
-      # 5. Build and Publish
+      - name: Create Publish Profile
+        shell: pwsh
+        run: |
+          $profileDir = Join-Path $env:GITHUB_WORKSPACE "Properties\PublishProfiles"
+          New-Item -ItemType Directory -Path $profileDir -Force | Out-Null
+
+          $publishPath = Join-Path $env:GITHUB_WORKSPACE "publish"
+
+          $xml = @"
+          <?xml version="1.0" encoding="utf-8"?>
+          <Project>
+            <PropertyGroup>
+              <WebPublishMethod>FileSystem</WebPublishMethod>
+              <PublishProvider>FileSystem</PublishProvider>
+              <publishUrl>$publishPath</publishUrl>
+              <DeleteExistingFiles>True</DeleteExistingFiles>
+              <Configuration>Release</Configuration>
+            </PropertyGroup>
+          </Project>
+          "@
+
+          Set-Content -Path (Join-Path $profileDir "CI.pubxml") -Value $xml -Encoding UTF8
+
       - name: Build and Publish
         shell: pwsh
         run: |
           msbuild "./ClassLateManage.csproj" `
+            /restore `
             /p:Configuration=Release `
+            /p:VisualStudioVersion=18.0 `
             /p:DeployOnBuild=true `
+            /p:PublishProfile="CI" `
             /p:WebPublishMethod=FileSystem `
-            /p:PublishUrl="${{ github.workspace }}\publish" `
-            /p:DeleteExistingFiles=true
+            /p:PublishUrl="${{ github.workspace }}\publish"
 
-      # 6. Deploy published files to FTP
+          if ($LASTEXITCODE -ne 0) {
+            throw "MSBuild publish failed."
+          }
+
+      - name: Verify Publish Output
+        shell: pwsh
+        run: |
+          $publishPath = Join-Path $env:GITHUB_WORKSPACE "publish"
+
+          if (!(Test-Path $publishPath)) {
+            throw "Publish folder not found: $publishPath"
+          }
+
+          Get-ChildItem $publishPath -Force
+          
+          if (!(Test-Path (Join-Path $publishPath "Web.config"))) {
+            throw "Web.config missing from publish output."
+          }
+
       - name: Deploy to FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
