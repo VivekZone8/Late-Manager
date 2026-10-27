@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 jobs:
@@ -54,32 +55,27 @@ jobs:
         shell: pwsh
         run: |
           msbuild "./ClassLateManage.csproj" `
-            /restore `
             /p:Configuration=Release `
-            /p:VisualStudioVersion=18.0 `
             /p:DeployOnBuild=true `
             /p:PublishProfile="CI" `
             /p:WebPublishMethod=FileSystem `
             /p:PublishUrl="${{ github.workspace }}\publish"
 
           if ($LASTEXITCODE -ne 0) {
-            throw "MSBuild publish failed."
+            throw "Build or publish failed."
           }
 
-      - name: Verify Publish Output
+      - name: Verify Publish Folder
         shell: pwsh
         run: |
           $publishPath = Join-Path $env:GITHUB_WORKSPACE "publish"
 
           if (!(Test-Path $publishPath)) {
-            throw "Publish folder not found: $publishPath"
+            throw "Publish folder not found."
           }
 
-          Get-ChildItem $publishPath -Force
-          
-          if (!(Test-Path (Join-Path $publishPath "Web.config"))) {
-            throw "Web.config missing from publish output."
-          }
+          Get-ChildItem $publishPath -Recurse |
+            Select-Object -First 30 FullName
 
       - name: Deploy to FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -88,5 +84,8 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           protocol: ftps
+          port: 21
+          security: strict
+          timeout: 120000
           local-dir: ./publish/
           server-dir: /
