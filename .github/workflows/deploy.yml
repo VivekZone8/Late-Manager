@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - main
+
   workflow_dispatch:
 
 jobs:
@@ -12,12 +13,26 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # 1. Download source code
       - name: Checkout Code
         uses: actions/checkout@v4
 
+      # 2. Setup MSBuild
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      # 3. Setup NuGet
+      - name: Setup NuGet
+        uses: NuGet/setup-nuget@v2
+
+      # 4. Restore NuGet packages
+      - name: Restore NuGet Packages
+        shell: pwsh
+        run: |
+          nuget restore "./ClassLateManage.csproj" `
+            -PackagesDirectory "${{ github.workspace }}\..\packages"
+
+      # 5. Build and Publish
       - name: Build and Publish
         shell: pwsh
         run: |
@@ -28,7 +43,8 @@ jobs:
             /p:PublishUrl="${{ github.workspace }}\publish" `
             /p:DeleteExistingFiles=true
 
-      - name: Deploy via FTPS
+      # 6. Deploy published files to FTP
+      - name: Deploy to FTP
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
           server: ${{ secrets.FTP_SERVER }}
